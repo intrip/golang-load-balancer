@@ -7,7 +7,6 @@ type Backend struct {
 }
 
 type Backends struct {
-	LastSelected Backend
-	Backends     []Backend
+	LastSelectedIndex int
+	Backends          []Backend
 }
-

@@ -1,12 +1,13 @@
 package common
 
-// TODO test
-// and then implement an interface and multiple handlers
-func (b *Backends) Next() (Backend, error) {
-	for _, backend := range b.Backends {
-		if backend == b.LastSelected {
-			return backend, nil
-		}
+// TODO implement an interface and multiple handlers
+func (b *Backends) Next() Backend {
+	res := b.Backends[b.LastSelectedIndex]
+	if b.LastSelectedIndex < len(b.Backends)-1 {
+		b.LastSelectedIndex++
+	} else {
+		b.LastSelectedIndex = 0
 	}
-	return b.Backends[0], nil
+
+	return res
 }

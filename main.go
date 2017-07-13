@@ -54,9 +54,9 @@ func handleConnection(conn net.Conn) {
 	defer conn.Close()
 	// needed for testing purpose
 	if !skipBalancing {
-		backendStrategy := &common.Backends{common.Backend{}, backends}
-		// TODO go from here and use next when tested
-		doBalance(conn, backends[0])
+		backendStrategy := &common.Backends{0, backends}
+		next := backendStrategy.Next()
+		doBalance(conn, &next)
 	}
 }
 
