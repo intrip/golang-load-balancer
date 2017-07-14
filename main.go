@@ -39,6 +39,8 @@ func listen(bind *string, port *int, started chan bool) {
 	}
 	started <- true
 
+	backendStruct := &common.Backends{0, backends}
+
 	for {
 		conn, err := listener.Accept()
 		defer conn.Close()
@@ -46,16 +48,15 @@ func listen(bind *string, port *int, started chan bool) {
 			fmt.Println("Error accepting connection: ", err.Error())
 			continue
 		}
-		go handleConnection(conn)
+		go handleConnection(conn, backendStruct)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func handleConnection(conn net.Conn, backendStruct *common.Backends) {
 	defer conn.Close()
 	// needed for testing purpose
 	if !skipBalancing {
-		backendStrategy := &common.Backends{0, backends}
-		next := backendStrategy.Next()
+		next := common.NextRoundRobin(backendStruct)
 		doBalance(conn, &next)
 	}
 }
