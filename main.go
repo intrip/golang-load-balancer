@@ -32,11 +32,11 @@ func main() {
 
 func listen(bind *string, port *int, started chan bool) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bind, *port))
-	defer listener.Close()
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
+	defer listener.Close()
 	started <- true
 
 	backendStruct := &common.Backends{0, backends}

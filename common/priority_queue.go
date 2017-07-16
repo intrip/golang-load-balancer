@@ -13,11 +13,7 @@ type Backends struct {
 
 func NextRoundRobin(b *Backends) Backend {
 	res := b.Backends[b.LastSelectedIndex]
-	if b.LastSelectedIndex < len(b.Backends)-1 {
-		b.LastSelectedIndex++
-	} else {
-		b.LastSelectedIndex = 0
-	}
+	b.LastSelectedIndex = (b.LastSelectedIndex + 1) % len(b.Backends)
 
 	return res
 }
