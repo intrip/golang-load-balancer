@@ -1,28 +1,56 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"github.com/intrip/simple_balancer/common"
+	"github.com/spf13/viper"
 	"io"
 	"net"
-	"os"
+	"strconv"
 	"strings"
 )
 
-var backends []common.Backend
-
 var (
-	bind    = flag.String("bind", "0.0.0.0", "The address to bind on")
-	port    = flag.Int("port", 8080, "The port to listen to")
-	balance = flag.String("balancers", "0.0.0.0:8081", "The balancer as a csv list of ip:port")
+	bind, balance string
+	port          int
+	skipBalancing = false
+	backends      []common.Backend
 )
 
-var skipBalancing = false
-
 func init() {
-	flag.Parse()
-	backends = parseBalance(*balance)
+	loadConfig()
+}
+
+// loads config from ./config.yaml
+func loadConfig() {
+	viper.SetConfigType("yaml")
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("Error in config file: %s \n", err))
+	}
+
+	server := viper.GetStringMapString("server")
+	// read port
+	if v, ok := server["port"]; ok {
+		port, err = strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Errorf("Server port is not valid: %s \n", err))
+		}
+	} else {
+		panic(fmt.Errorf("Server port is required"))
+	}
+	// listen
+	if v, ok := server["bind"]; ok {
+		bind = v
+	} else {
+		panic(fmt.Errorf("Server bind is required"))
+	}
+
+	balance = viper.GetString("balancers")
+	backends = parseBalance(balance)
+
 }
 
 func main() {
@@ -30,11 +58,10 @@ func main() {
 	listen(bind, port, started)
 }
 
-func listen(bind *string, port *int, started chan bool) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bind, *port))
+func listen(bind string, port int, started chan bool) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bind, port))
 	if err != nil {
-		fmt.Println("Error listening:", err.Error())
-		os.Exit(1)
+		panic(fmt.Errorf("Error listening:", err.Error()))
 	}
 	defer listener.Close()
 	started <- true
@@ -76,8 +103,7 @@ func parseBalance(balancers string) (backends []common.Backend) {
 func doBalance(fromConnection net.Conn, backend *common.Backend) {
 	toConnection, err := net.Dial("tcp", fmt.Sprintf("%s:%s", backend.Ip, backend.Port))
 	if err != nil {
-		fmt.Printf("Error connecting to %s:%s : %s\n", backend.Ip, backend.Port, err.Error())
-		os.Exit(1)
+		panic(fmt.Errorf("Error connecting to %s:%s : %s\n", backend.Ip, backend.Port, err.Error()))
 	}
 	defer toConnection.Close()
 

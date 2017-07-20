@@ -1,0 +1,6 @@
+# The load balancer server configuration
+server:
+  bind: '0.0.0.0'
+  port: '8080'
+# The list of server you want to balance on
+balancers: '0.0.0.0:8081'

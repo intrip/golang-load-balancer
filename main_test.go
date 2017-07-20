@@ -16,7 +16,7 @@ func TestAcceptsLocalConnections(t *testing.T) {
 	go listen(bind, port, startedListening)
 	<-startedListening
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", *bind, *port))
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", bind, port))
 	defer conn.Close()
 	if err != nil {
 		t.Errorf("the server does not accept local connections: %s", err.Error())
