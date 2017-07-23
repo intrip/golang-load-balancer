@@ -6,24 +6,44 @@ import (
 	"github.com/intrip/simple_balancer/common"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 )
 
-func TestAcceptsLocalConnections(t *testing.T) {
-	// here we don't buffer the channel to wait until has started
-	startedListening := make(chan bool)
+var (
+	hasStarted = false // used to skip listening if has already started
+)
+
+func setup() {
+	activeConnections = 0
 	skipBalancing = true
+}
+
+func doListen(bind string, port int, startedListening chan bool) {
+	if hasStarted {
+		return
+	}
+
 	go listen(bind, port, startedListening)
 	<-startedListening
+	hasStarted = true
+}
+
+func TestAcceptsLocalConnections(t *testing.T) {
+	setup()
+	// here we don't buffer the channel to wait until has started
+	startedListening := make(chan bool)
+	doListen(bind, port, startedListening)
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", bind, port))
-	defer conn.Close()
 	if err != nil {
 		t.Errorf("the server does not accept local connections: %s", err.Error())
 	}
+	defer conn.Close()
 }
 
 func TestParseBalance(t *testing.T) {
+	setup()
 	balance := "0.0.0.0:3000,0.0.0.0:3001"
 	expectedBackends := [2]common.Backend{common.Backend{"0.0.0.0", "3000", 0}, common.Backend{"0.0.0.0", "3001", 0}}
 
@@ -42,6 +62,7 @@ func TestParseBalance(t *testing.T) {
 }
 
 func TestDoBalance(t *testing.T) {
+	setup()
 	// balancer info
 	balancerIp := "0.0.0.0"
 	balancerPort := 3000
