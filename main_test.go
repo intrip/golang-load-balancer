@@ -1,51 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/intrip/simple_balancer/common"
-	"net"
-	"strconv"
-	"sync"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"testing"
 )
 
-var (
-	hasStarted = false // used to skip listening if has already started
-)
-
-func setup() {
-	activeConnections = 0
-	skipBalancing = true
-}
-
-func doListen(bind string, port int, startedListening chan bool) {
-	if hasStarted {
-		return
-	}
-
-	go listen(bind, port, startedListening)
-	<-startedListening
-	hasStarted = true
-}
-
-func TestAcceptsLocalConnections(t *testing.T) {
-	setup()
-	// here we don't buffer the channel to wait until has started
-	startedListening := make(chan bool)
-	doListen(bind, port, startedListening)
-
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", bind, port))
-	if err != nil {
-		t.Errorf("the server does not accept local connections: %s", err.Error())
-	}
-	defer conn.Close()
-}
-
 func TestParseBalance(t *testing.T) {
-	setup()
-	balance := "0.0.0.0:3000,0.0.0.0:3001"
-	expectedBackends := [2]common.Backend{common.Backend{"0.0.0.0", "3000", 0}, common.Backend{"0.0.0.0", "3001", 0}}
+	balance := "http://0.0.0.0:3000/home,http://0.0.0.0:3001/info"
+	expectedBackends := []common.Backend{common.Backend{"http://0.0.0.0:3000/home", 0}, common.Backend{"http://0.0.0.0:3001/info", 0}}
 
 	backends := parseBalance(balance)
 
@@ -61,58 +27,83 @@ func TestParseBalance(t *testing.T) {
 	}
 }
 
-func TestDoBalance(t *testing.T) {
-	setup()
-	// balancer info
-	balancerIp := "0.0.0.0"
-	balancerPort := 3000
-	// backend info
-	beIp := "0.0.0.0"
-	bePort := 3001
-	toBackend := common.Backend{beIp, strconv.Itoa(bePort), 0}
-	testMessage := "Hello world!"
+func TestLoadConfig(t *testing.T) {
+	loadConfig("config_test")
+	expectedPort := 8080
+	expectedBind := "0.0.0.0"
+	expectedMaxConnections := 100
+	expectedReadTimeout := 100
+	expectedWriteTimeout := 100
+	expectedBalance := "http://0.0.0.0:8081"
 
-	done := make(chan bool)
-	connection := make(chan net.Conn)
-	// start listening balancer
-	go func(done chan bool, connection chan net.Conn) {
-		listener, _ := net.Listen("tcp", fmt.Sprintf("%s:%d", balancerIp, balancerPort))
-		defer listener.Close()
-		done <- true
-		conn, _ := listener.Accept()
-		connection <- conn
-	}(done, connection)
-	// start listening backend
-	go func(done chan bool, connection chan net.Conn) {
-		listener, _ := net.Listen("tcp", fmt.Sprintf("%s:%d", beIp, bePort))
-		defer listener.Close()
-		done <- true
-		conn, _ := listener.Accept()
-		connection <- conn
-	}(done, connection)
-
-	// wait for both listeners
-	<-done
-	<-done
-
-	// connects to the balancer and send test data
-	balancerConnTo, _ := net.Dial("tcp", fmt.Sprintf("%s:%d", balancerIp, balancerPort))
-	writer := bufio.NewWriter(balancerConnTo)
-	writer.WriteString(fmt.Sprintf("%s\n", testMessage))
-	writer.Flush()
-
-	balancerConnFrom := <-connection
-	go doBalance(balancerConnFrom, &toBackend)
-
-	backendConn := <-connection
-	reader := bufio.NewReader(backendConn)
-	msg, _ := reader.ReadString('\n')
-	if msg[:len(msg)-1] != testMessage {
-		t.Errorf("Message received is wrong, expected: %s got: %s", testMessage, msg)
+	if expectedPort != port {
+		t.Errorf("Port differ, expected %d got %d", expectedPort, port)
 	}
+	if expectedBind != bind {
+		t.Errorf("Bind differ, expected %d got %d", expectedBind, bind)
+	}
+	if expectedMaxConnections != maxConnections {
+		t.Errorf("MaxConnections differ, expected %d got %d", expectedMaxConnections, maxConnections)
+	}
+	if expectedReadTimeout != readTimeout {
+		t.Errorf("readTimeout differ, expected %d got %d", expectedReadTimeout, readTimeout)
+	}
+	if expectedWriteTimeout != writeTimeout {
+		t.Errorf("WriteTimeout differ, expected %d got %d", expectedWriteTimeout, writeTimeout)
+	}
+	if expectedBalance != balance {
+		t.Errorf("Balance differ, expected %d got %d", expectedBalance, balance)
+	}
+}
 
-	// verify that increments active connections
-	if toBackend.ActiveConnections == 0 {
-		t.Errorf("Expected activeConnection to be 1, got: %d", toBackend.ActiveConnections)
+func TestMaxConnections(t *testing.T) {
+
+	//for i := 0; i <= maxConnections; i++ {
+	//_, err := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
+	//if i == maxConnections && err == nil {
+	//fmt.Println(err)
+	//}
+	//}
+}
+
+func TestDoBalance(t *testing.T) {
+	msg := "Hello world!"
+
+	// listen balancer
+	beListen := "0.0.0.0:8081"
+	beRemoteAddr := ""
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		beRemoteAddr = r.RemoteAddr
+		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
+	})
+
+	// listen backend
+	beServeMux := http.NewServeMux()
+	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		expectedForwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), beRemoteAddr, serverUrl(), r.Proto)
+		if r.Header["Forwarded"][0] != expectedForwarded {
+			t.Errorf("Expected to receive forwarded headers: %s, got: %s", r.Header["Forwarded"][0], expectedForwarded)
+		}
+
+		// send msg to the caller
+		fmt.Fprintf(w, msg)
+	})
+
+	go func() {
+		http.ListenAndServe(beListen, beServeMux)
+	}()
+	go func() {
+		http.ListenAndServe(serverUrl(), serveMux)
+	}()
+
+	res, err := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
+	if err != nil {
+		log.Panic("[test] Error connecting to balancer: ", err)
+	}
+	bodyBytes, _ := ioutil.ReadAll(res.Body)
+
+	if string(bodyBytes) != msg {
+		t.Errorf("Expected to read %s, got: %s", msg, bodyBytes)
 	}
 }

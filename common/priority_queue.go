@@ -1,19 +1,18 @@
 package common
 
 type Backend struct {
-	Ip                string
-	Port              string
+	Url               string
 	ActiveConnections int
 }
 
 type Backends struct {
-	LastSelectedIndex int
-	Backends          []Backend
+	CurrentIndex int
+	Backends     []Backend
 }
 
 func NextRoundRobin(b *Backends) Backend {
-	res := b.Backends[b.LastSelectedIndex]
-	b.LastSelectedIndex = (b.LastSelectedIndex + 1) % len(b.Backends)
+	res := b.Backends[b.CurrentIndex]
+	b.CurrentIndex = (b.CurrentIndex + 1) % len(b.Backends)
 
 	return res
 }

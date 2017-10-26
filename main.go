@@ -1,38 +1,36 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/intrip/simple_balancer/common"
 	"github.com/spf13/viper"
 	"io"
-	"net"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"time"
 )
 
 var (
-	bind, balance                     string
-	port                              int
-	maxConnections, activeConnections int32
-	skipBalancing                     = false
-	backends                          []common.Backend
-	done                              = false
-)
-
-const (
-	MAX_CONN = "Max connection reached, closing connection.\n"
+	bind, balance        string
+	port, maxConnections int
+	readTimeout          = 10
+	writeTimeout         = 10
+	backends             []common.Backend
 )
 
 func init() {
-	loadConfig()
-	activeConnections = 0
+	loadConfig("config")
 }
 
 // loads config from ./config.yaml
-func loadConfig() {
+func loadConfig(config string) {
 	viper.SetConfigType("yaml")
-	viper.SetConfigName("config")
+	viper.SetConfigName(config)
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {
@@ -57,14 +55,26 @@ func loadConfig() {
 	}
 	// maxConnections
 	if v, ok := server["maxconnections"]; ok {
-		maxConnInt, err := strconv.Atoi(v)
+		maxConnections, err = strconv.Atoi(v)
 		if err != nil {
 			panic(fmt.Errorf("Server maxConnections is not valid: %s \n", err))
 		}
-		maxConnections = int32(maxConnInt)
-
 	} else {
 		panic(fmt.Errorf("Server maxConnections is required"))
+	}
+
+	// timeout
+	if v, ok := server["readtimeout"]; ok {
+		readTimeout, err = strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Errorf("server readtimeout is not valid: %s \n", err))
+		}
+	}
+	if v, ok := server["writetimeout"]; ok {
+		writeTimeout, err = strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Errorf("server writetimeout is not valid: %s \n", err))
+		}
 	}
 
 	balance = viper.GetString("balancers")
@@ -72,72 +82,64 @@ func loadConfig() {
 }
 
 func main() {
-	// here we don't need to wait for started as we do in the tests
-	started := make(chan bool, 1)
-	listen(bind, port, started)
+	s := &http.Server{
+		Addr:           serverUrl(),
+		Handler:        common.NewLimitHandler(maxConnections, &Proxy{}),
+		ReadTimeout:    time.Duration(readTimeout) * time.Second,
+		WriteTimeout:   time.Duration(writeTimeout) * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
+	s.ListenAndServe()
 }
 
-func listen(bind string, port int, started chan bool) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bind, port))
-	if err != nil {
-		panic(fmt.Errorf("Error listening:", err.Error()))
-	}
-	defer listener.Close()
-	// used for testing purpose
-	started <- true
+func serverUrl() string {
+	return fmt.Sprintf("%s:%d", bind, port)
+}
 
+type Proxy struct{}
+
+func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	backendStruct := &common.Backends{0, backends}
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			continue
-		}
-
-		atomic.AddInt32(&activeConnections, 1)
-		if activeConnections > maxConnections {
-			conn.Close()
-		} else {
-			go handleConnection(conn, backendStruct)
-		}
-	}
+	next := common.NextRoundRobin(backendStruct)
+	doBalance(w, r, &next)
 }
 
-func handleConnection(conn net.Conn, backendStruct *common.Backends) {
-	defer conn.Close()
-	defer func() { atomic.AddInt32(&activeConnections, -1) }()
-
-	// needed for testing purpose
-	if !skipBalancing {
-		next := common.NextRoundRobin(backendStruct)
-		doBalance(conn, &next)
+func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) {
+	u, err := url.Parse(backend.Url + r.RequestURI)
+	if err != nil {
+		log.Panic("Error parsing backend Url: ", err)
 	}
+
+	client := &http.Client{}
+	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
+	req := &http.Request{Method: r.Method, URL: u, Body: r.Body, Host: backend.Url, Header: make(map[string][]string)}
+	req.Header.Set("Forwarded", forwarded)
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	bodyBytes, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Panic("Error reading response: ", err)
+	}
+
+	buffer := bytes.NewBuffer(bodyBytes)
+	for k, v := range res.Header {
+		w.Header().Set(k, strings.Join(v, ";"))
+	}
+	w.WriteHeader(res.StatusCode)
+
+	io.Copy(w, buffer)
 }
 
 func parseBalance(balancers string) (backends []common.Backend) {
-	backendsData := strings.Split(balancers, ",")
-	backends = make([]common.Backend, len(backendsData))
+	urls := strings.Split(balancers, ",")
+	backends = make([]common.Backend, len(urls))
 
-	for index, backend := range backendsData {
-		backendData := strings.SplitN(backend, ":", 2)
-		backends[index] = common.Backend{backendData[0], backendData[1], 0}
+	for index, backend := range urls {
+		backends[index] = common.Backend{Url: backend, ActiveConnections: 0}
 	}
 
 	return
-}
-
-func doBalance(fromConnection net.Conn, backend *common.Backend) {
-	toConnection, err := net.Dial("tcp", fmt.Sprintf("%s:%s", backend.Ip, backend.Port))
-	if err != nil {
-		panic(fmt.Errorf("Error connecting to %s:%s : %s\n", backend.Ip, backend.Port, err.Error()))
-	}
-	defer toConnection.Close()
-
-	backend.ActiveConnections++
-	copy(fromConnection, toConnection)
-}
-
-func copy(from net.Conn, to net.Conn) {
-	io.Copy(to, from)
 }
