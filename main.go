@@ -111,15 +111,11 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 		log.Panic("Error parsing backend Url: ", err)
 	}
 
-	client := &http.Client{}
-	req := &http.Request{Method: r.Method, URL: u, Body: r.Body, Host: backend.Url, Header: make(map[string][]string)}
-	// sets forwarded header
-	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
-	req.Header.Set("Forwarded", forwarded)
-	res, err := client.Do(req)
+	res, err := doRequest(r, w, u, backend.Url)
 	if err != nil {
-		panic(err)
+		return
 	}
+
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Panic("Error reading response: ", err)
@@ -132,6 +128,21 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	w.WriteHeader(res.StatusCode)
 
 	io.Copy(w, buffer)
+}
+
+func doRequest(r *http.Request, w http.ResponseWriter, url *url.URL, host string) (*http.Response, error) {
+	client := &http.Client{}
+	req := &http.Request{Method: r.Method, URL: url, Body: r.Body, Host: host, Header: make(map[string][]string)}
+	// sets forwarded header
+	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
+	req.Header.Set("Forwarded", forwarded)
+
+	res, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		return nil, err
+	}
+	return res, nil
 }
 
 func parseBalance(balancers string) (backends []common.Backend) {

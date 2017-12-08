@@ -72,6 +72,10 @@ func TestDoBalance(t *testing.T) {
 		// send msg to the caller
 		fmt.Fprintf(w, msg)
 	})
+	beServer := &http.Server{
+		Addr:    beListen,
+		Handler: beServeMux,
+	}
 
 	// listen balancer
 	serveMux := http.NewServeMux()
@@ -79,14 +83,18 @@ func TestDoBalance(t *testing.T) {
 		beRemoteAddr = r.RemoteAddr
 		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
 	})
+	server := &http.Server{
+		Addr:    serverUrl(),
+		Handler: serveMux,
+	}
 
 	// backend
 	go func() {
-		http.ListenAndServe(beListen, beServeMux)
+		beServer.ListenAndServe()
 	}()
 	// balancer
 	go func() {
-		http.ListenAndServe(serverUrl(), serveMux)
+		server.ListenAndServe()
 	}()
 
 	res, err := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
@@ -98,4 +106,31 @@ func TestDoBalance(t *testing.T) {
 	if string(bodyBytes) != msg {
 		t.Errorf("Expected to read %s, got: %s", msg, bodyBytes)
 	}
+
+	defer beServer.Close()
+	defer server.Close()
+}
+
+func TestBackendUnavailable(t *testing.T) {
+	// listen balancer
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		doBalance(w, r, &common.Backend{Url: "http://0.0.0.0:9999", ActiveConnections: 0})
+	})
+	server := &http.Server{
+		Addr:    serverUrl(),
+		Handler: serveMux,
+	}
+	// balancer
+	go func() {
+		server.ListenAndServe()
+	}()
+
+	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
+
+	if res.StatusCode != 503 {
+		t.Errorf("Expected status code 503, got: %d", res.StatusCode)
+	}
+
+	defer server.Close()
 }
