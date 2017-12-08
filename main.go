@@ -112,8 +112,9 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	}
 
 	client := &http.Client{}
-	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
 	req := &http.Request{Method: r.Method, URL: u, Body: r.Body, Host: backend.Url, Header: make(map[string][]string)}
+	// sets forwarded header
+	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
 	req.Header.Set("Forwarded", forwarded)
 	res, err := client.Do(req)
 	if err != nil {

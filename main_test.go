@@ -56,29 +56,12 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
-func TestMaxConnections(t *testing.T) {
-
-	//for i := 0; i <= maxConnections; i++ {
-	//_, err := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
-	//if i == maxConnections && err == nil {
-	//fmt.Println(err)
-	//}
-	//}
-}
-
 func TestDoBalance(t *testing.T) {
 	msg := "Hello world!"
 
-	// listen balancer
+	// listen backend
 	beListen := "0.0.0.0:8081"
 	beRemoteAddr := ""
-	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		beRemoteAddr = r.RemoteAddr
-		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
-	})
-
-	// listen backend
 	beServeMux := http.NewServeMux()
 	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		expectedForwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), beRemoteAddr, serverUrl(), r.Proto)
@@ -90,9 +73,18 @@ func TestDoBalance(t *testing.T) {
 		fmt.Fprintf(w, msg)
 	})
 
+	// listen balancer
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		beRemoteAddr = r.RemoteAddr
+		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
+	})
+
+	// backend
 	go func() {
 		http.ListenAndServe(beListen, beServeMux)
 	}()
+	// balancer
 	go func() {
 		http.ListenAndServe(serverUrl(), serveMux)
 	}()
