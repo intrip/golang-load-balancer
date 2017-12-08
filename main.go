@@ -100,8 +100,8 @@ func serverUrl() string {
 type Proxy struct{}
 
 func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	backendStruct := &common.Backends{0, backends}
-	next := common.NextRoundRobin(backendStruct)
+	backendStruct := &common.RoundRobin{0, backends}
+	next := common.Next(backendStruct)
 	doBalance(w, r, &next)
 }
 

@@ -1,16 +1,20 @@
 package common
 
+type PriorityQueue interface {
+	Next() Backend
+}
+
 type Backend struct {
 	Url               string
 	ActiveConnections int
 }
 
-type Backends struct {
+type RoundRobin struct {
 	CurrentIndex int
 	Backends     []Backend
 }
 
-func NextRoundRobin(b *Backends) Backend {
+func Next(b *RoundRobin) Backend {
 	res := b.Backends[b.CurrentIndex]
 	b.CurrentIndex = (b.CurrentIndex + 1) % len(b.Backends)
 
