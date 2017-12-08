@@ -115,10 +115,12 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	if err != nil {
 		return
 	}
+	log.Printf("Request from: %s to: %s", r.RemoteAddr, u)
 
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		log.Panic("Error reading response: ", err)
+		log.Print("Error reading response: ", err)
+		return
 	}
 
 	buffer := bytes.NewBuffer(bodyBytes)
