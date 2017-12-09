@@ -1,6 +1,6 @@
 package common
 
-type PriorityQueue interface {
+type PriorityQueuer interface {
 	Next() Backend
 }
 
