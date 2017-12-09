@@ -115,7 +115,7 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	if err != nil {
 		return
 	}
-	log.Printf("Request from: %s to: %s", r.RemoteAddr, u)
+	log.Printf("Request from: %s forwarded to: %s path: %s", r.RemoteAddr, backend.Url, r.RequestURI)
 
 	bodyBytes, err := ioutil.ReadAll(res.Body)
 	if err != nil {
