@@ -20,6 +20,7 @@ var (
 	port, maxConnections int
 	readTimeout          = 10
 	writeTimeout         = 10
+	backendsTimeout      = 10
 	backends             []common.Backend
 )
 
@@ -76,7 +77,12 @@ func loadConfig(config string) {
 			panic(fmt.Errorf("server writetimeout is not valid: %s \n", err))
 		}
 	}
-
+	if v, ok := server["backendstimeout"]; ok {
+		backendsTimeout, err = strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Errorf("server backendstimeout is not valid: %s \n", err))
+		}
+	}
 	balance = viper.GetString("balancers")
 	backends = parseBalance(balance)
 }
@@ -133,7 +139,7 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 }
 
 func doRequest(r *http.Request, w http.ResponseWriter, url *url.URL, host string) (*http.Response, error) {
-	client := &http.Client{}
+	client := &http.Client{Timeout: time.Duration(backendsTimeout) * time.Second}
 	req := &http.Request{Method: r.Method, URL: url, Body: r.Body, Host: host, Header: make(map[string][]string)}
 	// sets forwarded header
 	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestParseBalance(t *testing.T) {
@@ -30,10 +31,11 @@ func TestParseBalance(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	loadConfig("config_test")
 	expectedPort := 8080
-	expectedBind := "0.0.0.0"
+	expectedBind := "localhost"
 	expectedMaxConnections := 100
-	expectedReadTimeout := 100
-	expectedWriteTimeout := 100
+	expectedReadTimeout := 30
+	expectedWriteTimeout := 30
+	expectedBackendsTimeout := 30
 	expectedBalance := "http://0.0.0.0:8081"
 
 	if expectedPort != port {
@@ -51,6 +53,9 @@ func TestLoadConfig(t *testing.T) {
 	if expectedWriteTimeout != writeTimeout {
 		t.Errorf("WriteTimeout differ, expected %d got %d", expectedWriteTimeout, writeTimeout)
 	}
+	if expectedBackendsTimeout != backendsTimeout {
+		t.Errorf("BackendsTimeout differ, expected %d got %d", expectedBackendsTimeout, backendsTimeout)
+	}
 	if expectedBalance != balance {
 		t.Errorf("Balance differ, expected %d got %d", expectedBalance, balance)
 	}
@@ -60,7 +65,7 @@ func TestDoBalance(t *testing.T) {
 	msg := "Hello world!"
 
 	// listen backend
-	beListen := "0.0.0.0:8081"
+	beListen := "localhost:8081"
 	beRemoteAddr := ""
 	beServeMux := http.NewServeMux()
 	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +114,53 @@ func TestDoBalance(t *testing.T) {
 
 	defer beServer.Close()
 	defer server.Close()
+}
+
+// TODO consider using a mock instead
+func TestBackendTimeout(t *testing.T) {
+	oldBackendsTimeout := backendsTimeout
+	backendsTimeout = 1
+	// listen backend
+	beListen := "localhost:8081"
+	beRemoteAddr := ""
+	beServeMux := http.NewServeMux()
+	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Duration(2) * time.Second)
+	})
+	beServer := &http.Server{
+		Addr:    beListen,
+		Handler: beServeMux,
+	}
+
+	// listen balancer
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		beRemoteAddr = r.RemoteAddr
+		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
+	})
+	server := &http.Server{
+		Addr:    serverUrl(),
+		Handler: serveMux,
+	}
+
+	// backend
+	go func() {
+		beServer.ListenAndServe()
+	}()
+	// balancer
+	go func() {
+		server.ListenAndServe()
+	}()
+
+	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
+
+	if res.StatusCode != 503 {
+		t.Errorf("Expected status code 503, got: %d", res.StatusCode)
+	}
+
+	defer beServer.Close()
+	defer server.Close()
+	backendsTimeout = oldBackendsTimeout
 }
 
 func TestBackendUnavailable(t *testing.T) {
