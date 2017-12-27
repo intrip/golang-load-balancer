@@ -73,6 +73,17 @@ func TestDoBalance(t *testing.T) {
 		if r.Header["Forwarded"][0] != expectedForwarded {
 			t.Errorf("Expected to receive forwarded headers: %s, got: %s", r.Header["Forwarded"][0], expectedForwarded)
 		}
+		if r.Header["X-Forwarded-Host"][0] != serverUrl() {
+			t.Errorf("Expected X-Forwarded-Host: %s, got: %s", r.Header["X-Forwarded-Host"], serverUrl())
+		}
+		if r.Header["X-Forwarded-Port"][0] != "8080" {
+			t.Errorf("Expected X-Forwarded-Port: %s, got: %s", r.Header["X-Forwarded-Port"], "8080")
+		}
+		if r.Header["X-Forwarded-For"][0] != beRemoteAddr {
+			t.Errorf("Expected X-Forwarded-Port: %s, got: %s", r.Header["X-Forwarded-For"], beRemoteAddr)
+		}
+
+		// TODO test for content length
 
 		// send msg to the caller
 		fmt.Fprintf(w, msg)

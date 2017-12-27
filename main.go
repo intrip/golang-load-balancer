@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -130,22 +131,48 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	}
 
 	buffer := bytes.NewBuffer(bodyBytes)
+	// copies header
 	for k, v := range res.Header {
 		w.Header().Set(k, strings.Join(v, ";"))
 	}
 	w.WriteHeader(res.StatusCode)
+	// copies cookies
+	for _, cookie := range r.Cookies() {
+		http.SetCookie(w, cookie)
+	}
 
 	io.Copy(w, buffer)
 }
 
 func doRequest(r *http.Request, w http.ResponseWriter, url *url.URL, host string) (*http.Response, error) {
 	client := &http.Client{Timeout: time.Duration(backendsTimeout) * time.Second}
-	req := &http.Request{Method: r.Method, URL: url, Body: r.Body, Host: host, Header: make(map[string][]string)}
+	req := &http.Request{Method: r.Method,
+		URL:              url,
+		Header:           r.Header,
+		Body:             r.Body,
+		ContentLength:    r.ContentLength,
+		TransferEncoding: r.TransferEncoding,
+		Host:             host,
+		//TLS:              r.TLS,
+		Trailer: r.Trailer}
 	// sets forwarded header
 	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
 	req.Header.Set("Forwarded", forwarded)
+	req.Header.Set("X-Forwarded-Host", r.Host)
+	req.Header.Set("X-Forwarded-For", r.RemoteAddr)
+	_, port, _ := net.SplitHostPort(r.Host)
+	req.Header.Set("X-Forwarded-Port", port)
+
+	// copies cookies
+	for _, cookie := range r.Cookies() {
+		req.AddCookie(cookie)
+	}
+	//fmt.Println("Request cookies: ", req.Cookies())
 
 	res, err := client.Do(req)
+	// logging
+	//fmt.Printf("Response: %#v\n", res.StatusCode)
+	//fmt.Println("Response cookies: ", res.Cookies())
 	if err != nil {
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		return nil, err
