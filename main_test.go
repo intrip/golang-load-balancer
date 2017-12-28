@@ -5,6 +5,7 @@ import (
 	"github.com/intrip/simple_balancer/common"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -35,7 +36,6 @@ func TestLoadConfig(t *testing.T) {
 	expectedMaxConnections := 100
 	expectedReadTimeout := 30
 	expectedWriteTimeout := 30
-	expectedBackendsTimeout := 30
 	expectedBalance := "http://0.0.0.0:8081"
 
 	if expectedPort != port {
@@ -53,9 +53,6 @@ func TestLoadConfig(t *testing.T) {
 	if expectedWriteTimeout != writeTimeout {
 		t.Errorf("WriteTimeout differ, expected %d got %d", expectedWriteTimeout, writeTimeout)
 	}
-	if expectedBackendsTimeout != backendsTimeout {
-		t.Errorf("BackendsTimeout differ, expected %d got %d", expectedBackendsTimeout, backendsTimeout)
-	}
 	if expectedBalance != balance {
 		t.Errorf("Balance differ, expected %d got %d", expectedBalance, balance)
 	}
@@ -69,21 +66,9 @@ func TestDoBalance(t *testing.T) {
 	beRemoteAddr := ""
 	beServeMux := http.NewServeMux()
 	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		expectedForwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), beRemoteAddr, serverUrl(), r.Proto)
-		if r.Header["Forwarded"][0] != expectedForwarded {
-			t.Errorf("Expected to receive forwarded headers: %s, got: %s", r.Header["Forwarded"][0], expectedForwarded)
-		}
-		if r.Header["X-Forwarded-Host"][0] != serverUrl() {
-			t.Errorf("Expected X-Forwarded-Host: %s, got: %s", r.Header["X-Forwarded-Host"], serverUrl())
-		}
-		if r.Header["X-Forwarded-Port"][0] != "8080" {
-			t.Errorf("Expected X-Forwarded-Port: %s, got: %s", r.Header["X-Forwarded-Port"], "8080")
-		}
 		if r.Header["X-Forwarded-For"][0] != beRemoteAddr {
-			t.Errorf("Expected X-Forwarded-Port: %s, got: %s", r.Header["X-Forwarded-For"], beRemoteAddr)
+			t.Errorf("Expected X-Forwarded-For: %s, got: %s", r.Header["X-Forwarded-For"][0], beRemoteAddr)
 		}
-
-		// TODO test for content length
 
 		// send msg to the caller
 		fmt.Fprintf(w, msg)
@@ -96,7 +81,7 @@ func TestDoBalance(t *testing.T) {
 	// listen balancer
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		beRemoteAddr = r.RemoteAddr
+		beRemoteAddr, _, _ = net.SplitHostPort(r.RemoteAddr)
 		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
 	})
 	server := &http.Server{
@@ -113,6 +98,7 @@ func TestDoBalance(t *testing.T) {
 		server.ListenAndServe()
 	}()
 
+	time.Sleep(time.Duration(100) * time.Millisecond)
 	res, err := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
 	if err != nil {
 		log.Panic("[test] Error connecting to balancer: ", err)
@@ -125,53 +111,6 @@ func TestDoBalance(t *testing.T) {
 
 	defer beServer.Close()
 	defer server.Close()
-}
-
-// TODO consider using a mock instead
-func TestBackendTimeout(t *testing.T) {
-	oldBackendsTimeout := backendsTimeout
-	backendsTimeout = 1
-	// listen backend
-	beListen := "localhost:8081"
-	beRemoteAddr := ""
-	beServeMux := http.NewServeMux()
-	beServeMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(time.Duration(2) * time.Second)
-	})
-	beServer := &http.Server{
-		Addr:    beListen,
-		Handler: beServeMux,
-	}
-
-	// listen balancer
-	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		beRemoteAddr = r.RemoteAddr
-		doBalance(w, r, &common.Backend{Url: fmt.Sprintf("http://%s", beListen), ActiveConnections: 0})
-	})
-	server := &http.Server{
-		Addr:    serverUrl(),
-		Handler: serveMux,
-	}
-
-	// backend
-	go func() {
-		beServer.ListenAndServe()
-	}()
-	// balancer
-	go func() {
-		server.ListenAndServe()
-	}()
-
-	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
-
-	if res.StatusCode != 503 {
-		t.Errorf("Expected status code 503, got: %d", res.StatusCode)
-	}
-
-	defer beServer.Close()
-	defer server.Close()
-	backendsTimeout = oldBackendsTimeout
 }
 
 func TestBackendUnavailable(t *testing.T) {
@@ -189,10 +128,11 @@ func TestBackendUnavailable(t *testing.T) {
 		server.ListenAndServe()
 	}()
 
+	time.Sleep(time.Duration(100) * time.Millisecond)
 	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
 
-	if res.StatusCode != 503 {
-		t.Errorf("Expected status code 503, got: %d", res.StatusCode)
+	if res.StatusCode != 502 {
+		t.Errorf("Expected status code 502, got: %d", res.StatusCode)
 	}
 
 	defer server.Close()

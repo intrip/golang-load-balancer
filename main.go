@@ -1,15 +1,13 @@
 package main
 
 import (
-	"bytes"
+	"flag"
 	"fmt"
 	"github.com/intrip/simple_balancer/common"
 	"github.com/spf13/viper"
-	"io"
-	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -21,12 +19,18 @@ var (
 	port, maxConnections int
 	readTimeout          = 10
 	writeTimeout         = 10
-	backendsTimeout      = 10
 	backends             []common.Backend
+	testEnv              bool
 )
 
 func init() {
 	loadConfig("config")
+
+	if flag.Lookup("test.v") == nil {
+		testEnv = false
+	} else {
+		testEnv = true
+	}
 }
 
 // loads config from ./config.yaml
@@ -78,12 +82,6 @@ func loadConfig(config string) {
 			panic(fmt.Errorf("server writetimeout is not valid: %s \n", err))
 		}
 	}
-	if v, ok := server["backendstimeout"]; ok {
-		backendsTimeout, err = strconv.Atoi(v)
-		if err != nil {
-			panic(fmt.Errorf("server backendstimeout is not valid: %s \n", err))
-		}
-	}
 	balance = viper.GetString("balancers")
 	backends = parseBalance(balance)
 }
@@ -113,71 +111,16 @@ func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) {
-	u, err := url.Parse(backend.Url + r.RequestURI)
+	u, err := url.Parse(backend.Url)
 	if err != nil {
 		log.Panic("Error parsing backend Url: ", err)
 	}
 
-	res, err := doRequest(r, w, u, backend.Url)
-	if err != nil {
-		return
+	if !testEnv {
+		log.Printf("Request from: %s forwarded to: %s path: %s", r.RemoteAddr, backend.Url, r.RequestURI)
 	}
-	log.Printf("Request from: %s forwarded to: %s path: %s", r.RemoteAddr, backend.Url, r.RequestURI)
-
-	bodyBytes, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Print("Error reading response: ", err)
-		return
-	}
-
-	buffer := bytes.NewBuffer(bodyBytes)
-	// copies header
-	for k, v := range res.Header {
-		w.Header().Set(k, strings.Join(v, ";"))
-	}
-	w.WriteHeader(res.StatusCode)
-	// copies cookies
-	for _, cookie := range r.Cookies() {
-		http.SetCookie(w, cookie)
-	}
-
-	io.Copy(w, buffer)
-}
-
-func doRequest(r *http.Request, w http.ResponseWriter, url *url.URL, host string) (*http.Response, error) {
-	client := &http.Client{Timeout: time.Duration(backendsTimeout) * time.Second}
-	req := &http.Request{Method: r.Method,
-		URL:              url,
-		Header:           r.Header,
-		Body:             r.Body,
-		ContentLength:    r.ContentLength,
-		TransferEncoding: r.TransferEncoding,
-		Host:             host,
-		//TLS:              r.TLS,
-		Trailer: r.Trailer}
-	// sets forwarded header
-	forwarded := fmt.Sprintf("by=%s; for=%s; host=%s; proto=%s", serverUrl(), r.RemoteAddr, r.Host, r.Proto)
-	req.Header.Set("Forwarded", forwarded)
-	req.Header.Set("X-Forwarded-Host", r.Host)
-	req.Header.Set("X-Forwarded-For", r.RemoteAddr)
-	_, port, _ := net.SplitHostPort(r.Host)
-	req.Header.Set("X-Forwarded-Port", port)
-
-	// copies cookies
-	for _, cookie := range r.Cookies() {
-		req.AddCookie(cookie)
-	}
-	//fmt.Println("Request cookies: ", req.Cookies())
-
-	res, err := client.Do(req)
-	// logging
-	//fmt.Printf("Response: %#v\n", res.StatusCode)
-	//fmt.Println("Response cookies: ", res.Cookies())
-	if err != nil {
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-		return nil, err
-	}
-	return res, nil
+	proxy := httputil.NewSingleHostReverseProxy(u)
+	proxy.ServeHTTP(w, r)
 }
 
 func parseBalance(balancers string) (backends []common.Backend) {

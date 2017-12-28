@@ -7,7 +7,5 @@ server:
   readTimeout: '30'
   # in seconds
   writeTimeout: '30'
-  # backends connection timeout in seconds
-  backendsTimeout: '30'
 # The list of server you want to balance on separated by comma
 balancers: 'http://0.0.0.0:3003'
