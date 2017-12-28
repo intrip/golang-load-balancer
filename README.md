@@ -4,9 +4,9 @@ A very simple HTTP load balancer written in Golang.
 
 ## Usage
 
-`$ go build
+```$ go build
 
-$ ./simple_balancer`
+$ ./simple_balancer```
 
 connect to http://localhost:8080 (default settings)
 
