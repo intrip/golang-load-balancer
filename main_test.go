@@ -12,8 +12,8 @@ import (
 )
 
 func TestParseBalance(t *testing.T) {
-	balance := "http://0.0.0.0:3000/home,http://0.0.0.0:3001/info"
-	expectedBackends := []common.Backend{common.Backend{"http://0.0.0.0:3000/home", 0}, common.Backend{"http://0.0.0.0:3001/info", 0}}
+	balance := "http://localhost:3000/home,http://localhost:3001/info"
+	expectedBackends := []common.Backend{common.Backend{"http://localhost:3000/home", 0}, common.Backend{"http://localhost:3001/info", 0}}
 
 	backends := parseBalance(balance)
 
@@ -36,7 +36,7 @@ func TestLoadConfig(t *testing.T) {
 	expectedMaxConnections := 100
 	expectedReadTimeout := 30
 	expectedWriteTimeout := 30
-	expectedBalance := "http://0.0.0.0:8081"
+	expectedBalance := "http://localhost:8081"
 
 	if expectedPort != port {
 		t.Errorf("Port differ, expected %d got %d", expectedPort, port)
@@ -117,7 +117,7 @@ func TestBackendUnavailable(t *testing.T) {
 	// backend
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		doBalance(w, r, &common.Backend{Url: "http://0.0.0.0:9999"})
+		doBalance(w, r, &common.Backend{Url: "http://localhost:9999"})
 	})
 	server := &http.Server{
 		Addr:    serverUrl(),

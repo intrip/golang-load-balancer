@@ -6,4 +6,4 @@ server:
   readTimeout: '30'
   writeTimeout: '30'
 # The list of server you want to balance on
-balancers: 'http://0.0.0.0:8081'
+balancers: 'http://localhost:8081'
