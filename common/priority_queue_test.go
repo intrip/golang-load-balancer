@@ -5,8 +5,8 @@ import (
 )
 
 func TestNext(t *testing.T) {
-	backendA := Backend{Url: "http://0.0.0.0:8081", ActiveConnections: 0}
-	backendB := Backend{Url: "http://0.0.0.0:8082", ActiveConnections: 0}
+	backendA := Backend{Url: "http://localhost:8081", ActiveConnections: 0}
+	backendB := Backend{Url: "http://localhost:8082", ActiveConnections: 0}
 	backends := RoundRobin{0, []Backend{backendA, backendB}}
 
 	firstBackend := Next(&backends)

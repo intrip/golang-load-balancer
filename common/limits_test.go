@@ -17,7 +17,7 @@ func (h *FakeProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func TestMaxConnections(t *testing.T) {
 	maxConnections := 2
-	serverUrl := "0.0.0.0:8088"
+	serverUrl := "localhost:8088"
 
 	go func() {
 		s := &http.Server{
