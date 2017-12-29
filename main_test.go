@@ -114,10 +114,10 @@ func TestDoBalance(t *testing.T) {
 }
 
 func TestBackendUnavailable(t *testing.T) {
-	// listen balancer
+	// backend
 	serveMux := http.NewServeMux()
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		doBalance(w, r, &common.Backend{Url: "http://0.0.0.0:9999", ActiveConnections: 0})
+		doBalance(w, r, &common.Backend{Url: "http://0.0.0.0:9999"})
 	})
 	server := &http.Server{
 		Addr:    serverUrl(),
@@ -128,7 +128,6 @@ func TestBackendUnavailable(t *testing.T) {
 		server.ListenAndServe()
 	}()
 
-	time.Sleep(time.Duration(100) * time.Millisecond)
 	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
 
 	if res.StatusCode != 502 {

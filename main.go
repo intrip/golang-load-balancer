@@ -89,7 +89,7 @@ func loadConfig(config string) {
 func main() {
 	s := &http.Server{
 		Addr:           serverUrl(),
-		Handler:        common.NewLimitHandler(maxConnections, &Proxy{}),
+		Handler:        common.NewLimitHandler(maxConnections, &Proxy{&common.RoundRobin{0, backends}}),
 		ReadTimeout:    time.Duration(readTimeout) * time.Second,
 		WriteTimeout:   time.Duration(writeTimeout) * time.Second,
 		MaxHeaderBytes: 1 << 20,
@@ -102,11 +102,10 @@ func serverUrl() string {
 	return fmt.Sprintf("%s:%d", bind, port)
 }
 
-type Proxy struct{}
+type Proxy struct{ backendStruct *common.RoundRobin }
 
 func (h *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	backendStruct := &common.RoundRobin{0, backends}
-	next := common.Next(backendStruct)
+	next := common.Next(h.backendStruct)
 	doBalance(w, r, &next)
 }
 
@@ -119,6 +118,7 @@ func doBalance(w http.ResponseWriter, r *http.Request, backend *common.Backend) 
 	if !testEnv {
 		log.Printf("Request from: %s forwarded to: %s path: %s", r.RemoteAddr, backend.Url, r.RequestURI)
 	}
+
 	proxy := httputil.NewSingleHostReverseProxy(u)
 	proxy.ServeHTTP(w, r)
 }
