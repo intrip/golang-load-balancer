@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/intrip/simple_balancer/common"
+	"github.com/intrip/golang-load-balancer/common"
 	"github.com/spf13/viper"
 	"log"
 	"net/http"

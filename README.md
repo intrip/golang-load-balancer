@@ -6,7 +6,7 @@ A very simple HTTP load balancer written in Golang.
 
 ```
 $ go build
-$ ./simple_balancer
+$ ./golang-load-balancer
 ```
 
 connect to http://localhost:8080 (default settings)
