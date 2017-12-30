@@ -1,5 +1,7 @@
 # A simple Golang HTTP load balancer
 
+[![Build Status](https://travis-ci.org/intrip/golang-load-balancer.svg?branch=http)](https://travis-ci.org/intrip/golang-load-balancer)
+
 A very simple HTTP load balancer written in Golang.
 
 ## Usage
