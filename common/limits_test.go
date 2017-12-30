@@ -26,6 +26,7 @@ func TestMaxConnections(t *testing.T) {
 		}
 		s.ListenAndServe()
 	}()
+	time.Sleep(time.Duration(100) * time.Millisecond)
 
 	var wg sync.WaitGroup
 	reachedMax := false
