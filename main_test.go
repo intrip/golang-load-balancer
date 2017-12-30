@@ -128,6 +128,7 @@ func TestBackendUnavailable(t *testing.T) {
 		server.ListenAndServe()
 	}()
 
+	time.Sleep(time.Duration(100) * time.Millisecond)
 	res, _ := http.Get(fmt.Sprintf("http://%s/", serverUrl()))
 
 	if res.StatusCode != 502 {
